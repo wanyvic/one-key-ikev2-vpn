@@ -214,7 +214,7 @@ function pre_install(){
 
 # Download strongswan
 function download_files(){
-    strongswan_version='strongswan-5.5.1'
+    strongswan_version='strongswan-5.9.0'
     strongswan_file="$strongswan_version.tar.gz"
     if [ -f $strongswan_file ];then
         echo -e "$strongswan_file [$(__green "found")]"
@@ -425,7 +425,9 @@ function configure_strongswan(){
  cat > /usr/local/etc/strongswan.conf<<-EOF
  charon {
         load_modular = yes
-        duplicheck.enable = no
+        duplicheck {
+                enable = no
+        }
         compress = yes
         plugins {
                 include strongswan.d/charon/*.conf
@@ -583,6 +585,33 @@ function success_info(){
     echo -e "#############################################################"
     echo -e ""
 }
-
+function autoCa(){
+    echo -e "autoCa"
+    read -p "yes or no?(default_value:no):" auto_ca
+    if [ "$auto_ca" = "yes" ]; then
+        read -p "input your domain:" yourdomain
+        apt-get install socat
+        curl https://get.acme.sh
+        /root/.acme.sh/acme.sh --issue -d ${yourdomain} --standalone
+        cat > /usr/local/etc/strongswan.conf<<-EOF
+#! /bin/bash
+/root/.acme.sh/acme.sh --days 30 --renew --dns -d ${yourdomain}   
+cert_file="/root/.acme.sh/${yourdomain}/${yourdomain}.cer"   
+key_file="/root/.acme.sh/${yourdomain}/${yourdomain}.key"   
+sudo cp -f $cert_file /usr/local/etc/ipsec.d/certs/server.cert.pem   
+sudo cp -f $key_file /usr/local/etc/ipsec.d/private/server.pem   
+sudo cp -f $cert_file /usr/local/etc/ipsec.d/certs/client.cert.pem   
+sudo cp -f $key_file /usr/local/etc/ipsec.d/private/client.pem   
+sudo /usr/local/sbin/ipsec restart 
+EOF
+        (echo "0 0 2 * * bash /root/.acme.sh/autoCa.sh > /dev/null" ; crontab -l )| crontab
+        /etc/init.d/cron restart
+        cp /root/.acme.sh/${yourdomain}/${yourdomain}.cer  server.cert.pem
+        cp /root/.acme.sh/${yourdomain}/${yourdomain}.key  server.pem
+        cp /root/.acme.sh/${yourdomain}/ca.cer  ca.cert.pem
+    fi
+   
+}
 # Initialization step
+autoCa
 install_ikev2
